@@ -26,7 +26,7 @@
   <!-- Bibliothek -->
   <section id="libraryView">
     <div id="keyHint" class="card warn" hidden>
-      Zuerst einmal deinen OpenAI-Schlüssel eintragen: <a href="#settings">Einstellungen öffnen</a>
+      Zuerst einmal deinen KI-Schlüssel eintragen (Gemini gibt es kostenlos): <a href="#settings">Einstellungen öffnen</a>
     </div>
     <a id="nowPlaying" class="card now-playing" hidden></a>
     <label class="big-btn primary" for="pdfInput">+ PDF hinzufügen</label>
@@ -82,30 +82,72 @@
   <!-- Einstellungen -->
   <section id="settingsView" hidden>
     <div class="card">
-      <h2>1. OpenAI (Pflicht)</h2>
-      <p class="small muted">OpenAI schreibt den Podcast, versteht deine Fragen und beantwortet sie. Schlüssel bekommst du auf platform.openai.com → API keys.</p>
-      <label class="field">API-Schlüssel
-        <input type="password" id="sKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-…">
-      </label>
-      <label class="field">Text-Modell
-        <input id="sModel" list="modelList" autocapitalize="off" spellcheck="false">
-      </label>
-      <datalist id="modelList">
-        <option value="gpt-6.1-terra">
-        <option value="gpt-6.1-sol">
-        <option value="gpt-6-luna">
-        <option value="gpt-5-mini">
-      </datalist>
-      <button id="testKeyBtn" class="btn">Schlüssel testen</button>
-      <p id="testKeyOut" class="small"></p>
+      <h2>1. KI</h2>
+      <p class="small muted">Die KI schreibt den Podcast, versteht deine Fragen und beantwortet sie.</p>
+      <label class="radio"><input type="radio" name="textProv" value="gemini"> Google Gemini (kostenlos)</label>
+      <label class="radio"><input type="radio" name="textProv" value="openai"> OpenAI (kostet ein paar Cent)</label>
+
+      <div id="geminiTextBox">
+        <p class="small muted">Kostenlosen Schlüssel holen: auf aistudio.google.com mit deinem Google-Konto anmelden → „Get API key“ → „Create API key“.</p>
+        <p class="small warn card inner">Gut zu wissen: In der kostenlosen Stufe darf Google deine Inhalte (PDF-Text, Fragen) zur Verbesserung seiner Produkte verwenden. Für vertrauliche Dokumente lieber OpenAI wählen. Außerdem gibt es Tageslimits – bei sehr langen PDFs geht es dann am nächsten Tag mit „Erstellung fortsetzen“ weiter.</p>
+        <label class="field">Gemini-Schlüssel
+          <input type="password" id="sGKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…">
+        </label>
+        <label class="field">Text-Modell
+          <input id="sGModel" list="gModelList" autocapitalize="off" spellcheck="false">
+        </label>
+        <datalist id="gModelList">
+          <option value="gemini-3.8-flash">
+          <option value="gemini-3.6-flash">
+          <option value="gemini-3.5-flash-lite">
+          <option value="gemini-2.5-flash">
+        </datalist>
+        <button id="testGKeyBtn" class="btn">Schlüssel testen</button>
+        <p id="testGKeyOut" class="small"></p>
+      </div>
+
+      <div id="openaiTextBox" hidden>
+        <p class="small muted">Schlüssel bekommst du auf platform.openai.com → API keys (Guthaben nötig).</p>
+        <label class="field">OpenAI-Schlüssel
+          <input type="password" id="sKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-…">
+        </label>
+        <label class="field">Text-Modell
+          <input id="sModel" list="modelList" autocapitalize="off" spellcheck="false">
+        </label>
+        <datalist id="modelList">
+          <option value="gpt-6.1-terra">
+          <option value="gpt-6.1-sol">
+          <option value="gpt-6-luna">
+          <option value="gpt-5-mini">
+        </datalist>
+        <button id="testKeyBtn" class="btn">Schlüssel testen</button>
+        <p id="testKeyOut" class="small"></p>
+      </div>
     </div>
 
     <div class="card">
       <h2>2. Stimme</h2>
-      <label class="radio"><input type="radio" name="voiceProv" value="openai"> OpenAI-Stimme (einfach, günstig)</label>
+      <label class="radio"><input type="radio" name="voiceProv" value="gemini"> Gemini-Stimme (kostenlos)</label>
+      <label class="radio"><input type="radio" name="voiceProv" value="openai"> OpenAI-Stimme (günstig)</label>
       <label class="radio"><input type="radio" name="voiceProv" value="eleven"> Eigene Stimme (ElevenLabs)</label>
+      <p id="voiceKeyHint" class="small error" hidden></p>
 
-      <div id="openaiVoiceBox">
+      <div id="geminiVoiceBox">
+        <label class="field">Stimme
+          <select id="sGVoice"></select>
+        </label>
+        <label class="field">Stimmen-Modell
+          <input id="sGTtsModel" list="gTtsModelList" autocapitalize="off" spellcheck="false">
+        </label>
+        <datalist id="gTtsModelList">
+          <option value="gemini-3.8-flash-tts">
+          <option value="gemini-3.8-flash-lite-tts">
+          <option value="gemini-3.1-flash-tts-preview">
+        </datalist>
+        <button id="previewGeminiBtn" class="btn">Probe hören</button>
+      </div>
+
+      <div id="openaiVoiceBox" hidden>
         <label class="field">Stimme
           <select id="sVoice"></select>
         </label>
@@ -135,7 +177,7 @@
     <div class="card">
       <h2>Speicher</h2>
       <p id="storageInfo" class="small muted"></p>
-      <p class="small muted">Alles (PDFs, Podcasts, Schlüssel) bleibt nur auf diesem Handy. Die Schlüssel werden ausschließlich direkt an OpenAI bzw. ElevenLabs geschickt.</p>
+      <p class="small muted">Alles (PDFs, Podcasts, Schlüssel) bleibt nur auf diesem Handy. Die Schlüssel werden ausschließlich direkt an Google, OpenAI bzw. ElevenLabs geschickt.</p>
     </div>
   </section>
 </main>

@@ -2,20 +2,30 @@
 
 /*
  * Lernpodcast – PDF rein, bildlich erklärter Lern-Podcast raus.
- * Läuft komplett im Browser: PDF lesen (pdf.js), Texte schreiben (OpenAI),
- * vorlesen (OpenAI oder ElevenLabs), alles gespeichert in IndexedDB.
+ * Läuft komplett im Browser: PDF lesen (pdf.js), Texte schreiben (Gemini oder OpenAI),
+ * vorlesen (Gemini, OpenAI oder ElevenLabs), alles gespeichert in IndexedDB.
  */
 
 const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+const LAMEJS = 'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js';
 const OPENAI = 'https://api.openai.com/v1';
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta';
 const ELEVEN = 'https://api.elevenlabs.io/v1';
 const MAX_DOC_CHARS = 400000;
 const TTS_CHUNK = 3500;
+const GEMINI_TTS_CHUNK = 3000;
 const MAX_CHAPTERS = 40;
 const RATES = [0.8, 1, 1.15, 1.3, 1.5];
 const OPENAI_VOICES = ['coral', 'marin', 'cedar', 'nova', 'shimmer', 'sage', 'alloy', 'ash', 'ballad', 'echo', 'fable', 'onyx', 'verse'];
+const GEMINI_VOICES = [
+  ['Sulafat', 'warm'], ['Achird', 'freundlich'], ['Sadachbia', 'lebendig'], ['Puck', 'fröhlich'], ['Kore', 'bestimmt'],
+  ['Charon', 'informativ'], ['Sadaltager', 'kenntnisreich'], ['Aoede', 'locker'], ['Callirrhoe', 'entspannt'], ['Iapetus', 'klar'],
+  ['Erinome', 'klar'], ['Vindemiatrix', 'sanft'], ['Achernar', 'weich'], ['Algieba', 'geschmeidig'], ['Despina', 'geschmeidig'],
+  ['Schedar', 'ausgeglichen'], ['Gacrux', 'reif'], ['Zephyr', 'hell'], ['Fenrir', 'aufgeregt'], ['Leda', 'jugendlich'], ['Orus', 'bestimmt'],
+];
 
 const VOICE_STYLE = 'Sprich Deutsch wie ein warmer, begeisterter Podcast-Host, der einem Freund beim Laufen etwas erklärt: lebendig, natürlich, mit kleinen Pausen an den richtigen Stellen, nicht zu schnell.';
+const GEMINI_TTS_STYLE = 'warm, lebendig und natürlich, wie ein begeisterter Podcast-Host, der einem Freund etwas erklärt; ruhiges Tempo';
 
 const SAMPLE_TEXT = 'Heute nehme ich meine Stimme auf, damit mir mein Lernpodcast später alles so erklärt, als würde ich selbst sprechen. Ich lese ruhig, deutlich und ganz natürlich, so wie ich mit einem guten Freund reden würde. Stell dir vor, du stehst früh am Morgen an der Haustür. Die Luft ist kühl, die Straße ist noch leer, und irgendwo singt ein Vogel. Du ziehst die Schuhe fest, atmest tief ein und läufst los. Mit jedem Schritt wird der Kopf ein bisschen freier. Genau in solchen Momenten lernt man oft am besten: Wenn der Körper beschäftigt ist, hört der Kopf aufmerksam zu. Zahlen wie siebzehn, zweihundertfünfzig oder drei Komma fünf klingen dann gar nicht mehr trocken. Fragen wie „Warum ist das so?“ oder „Was passiert eigentlich, wenn …?“ tauchen ganz von selbst auf. Manchmal bin ich begeistert, manchmal nachdenklich, und manchmal muss ich einfach lachen. Und am Ende jeder Runde weiß ich ein kleines Stück mehr als vorher.';
 
@@ -84,7 +94,13 @@ const db = (() => {
   };
 })();
 
-const DEFAULTS = { openaiKey: '', model: 'gpt-6.1-terra', voiceProvider: 'openai', voice: 'coral', elKey: '', elVoice: '', rate: 1 };
+const DEFAULTS = {
+  textProvider: 'gemini', geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiTtsModel: 'gemini-3.8-flash-tts', geminiVoice: 'Sulafat',
+  openaiKey: '', model: 'gpt-6.1-terra', voiceProvider: 'gemini', voice: 'coral', elKey: '', elVoice: '', rate: 1,
+};
+const usesGemini = () => settings.textProvider === 'gemini';
+const hasTextKey = () => !!(usesGemini() ? settings.geminiKey : settings.openaiKey);
+const missingKeyMsg = () => `Bitte zuerst den ${usesGemini() ? 'Gemini' : 'OpenAI'}-Schlüssel in den Einstellungen eintragen.`;
 let settings = { ...DEFAULTS };
 async function loadSettings() {
   try { settings = { ...DEFAULTS, ...((await db.get('kv', 'settings')) || {}) }; } catch (e) { console.warn(e); }
@@ -115,12 +131,16 @@ function friendlyError(status, body, label) {
     const j = JSON.parse(body);
     msg = j.error?.message || j.detail?.message || (typeof j.detail === 'string' ? j.detail : '') || '';
   } catch { msg = String(body || '').slice(0, 200); }
-  if (status === 401) return `${label}: Der Schlüssel wird nicht akzeptiert. Bitte in den Einstellungen prüfen.`;
-  if (status === 429 && /quota|billing|credit/i.test(body)) return `${label}: Kein Guthaben mehr auf dem Konto.`;
+  if (status === 401 || /API_KEY_INVALID|API key not valid/i.test(body)) return `${label}: Der Schlüssel wird nicht akzeptiert. Bitte in den Einstellungen prüfen.`;
+  if (status === 429 && isDailyLimit(body)) return `${label}: Das Tageslimit der kostenlosen Gemini-Stufe ist erreicht. Morgen einfach auf „Erstellung fortsetzen“ tippen – es geht dort weiter, wo es aufgehört hat.`;
+  if (status === 429 && /limit: 0\b/i.test(body)) return `${label}: Dieses Modell gibt es in der kostenlosen Stufe nicht – bitte in den Einstellungen ein anderes wählen. (${msg})`;
+  if (status === 429 && /insufficient_quota|billing|credit/i.test(body)) return `${label}: Kein Guthaben mehr auf dem Konto.`;
   if (/instant_voice_cloning|can_not_use|subscription/i.test(body)) return `${label}: Dein ElevenLabs-Abo erlaubt das nicht (Stimmen-Klonen gibt es ab dem Starter-Abo). ${msg}`;
   if (status === 404 && /model/i.test(msg)) return `${label}: Dieses Modell gibt es nicht – bitte in den Einstellungen ein anderes wählen. (${msg})`;
   return `${label}: Fehler ${status}. ${msg}`;
 }
+
+const isDailyLimit = (body) => /PerDay|per_day|requests per day/i.test(body || '');
 
 async function apiFetch(url, opts, label) {
   for (let attempt = 0; ; attempt++) {
@@ -134,8 +154,11 @@ async function apiFetch(url, opts, label) {
     if (res.ok) return res;
     let body = '';
     try { body = await res.text(); } catch { /* egal */ }
-    if ((res.status === 429 || res.status >= 500) && attempt < 4 && !/quota|billing/i.test(body)) {
-      await sleep(3000 * (attempt + 1));
+    // Minutenlimits (v. a. Gemini-Gratisstufe) abwarten; Tageslimit und fehlendes Guthaben nicht.
+    const final = isDailyLimit(body) || /insufficient_quota|billing|limit: 0\b/i.test(body);
+    if ((res.status === 429 || res.status >= 500) && attempt < 6 && !final) {
+      const hint = /"retryDelay":\s*"(\d+)/.exec(body);
+      await sleep(hint ? (+hint[1] + 1) * 1000 : 4000 * (attempt + 1));
       continue;
     }
     const err = new Error(friendlyError(res.status, body, label));
@@ -150,7 +173,46 @@ const openaiHeaders = (json = true) => ({
   ...(json ? { 'Content-Type': 'application/json' } : {}),
 });
 
-async function chat(messages, { json = false, maxTokens = 32000, effort = 'low' } = {}) {
+const geminiHeaders = () => ({ 'x-goog-api-key': settings.geminiKey, 'Content-Type': 'application/json' });
+
+// Nachrichten kommen im OpenAI-Format ({role, content}); für Gemini werden sie umgebaut.
+function chat(messages, opts = {}) {
+  return usesGemini() ? geminiChat(messages, opts) : openaiChat(messages, opts);
+}
+
+function toGeminiPart(p) {
+  if (p.type === 'text') return { text: p.text };
+  if (p.type === 'audio') return { inlineData: { mimeType: p.mime, data: p.data } };
+  const [head, data] = p.image_url.url.split(',');
+  return { inlineData: { mimeType: head.slice(5, head.indexOf(';')), data } };
+}
+
+async function geminiChat(messages, { json = false, maxTokens = 32000 } = {}) {
+  const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const contents = [];
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+    const parts = typeof m.content === 'string' ? [{ text: m.content }] : m.content.map(toGeminiPart);
+    const role = m.role === 'assistant' ? 'model' : 'user';
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) last.parts.push(...parts); else contents.push({ role, parts });
+  }
+  const body = { contents, generationConfig: { maxOutputTokens: Math.min(maxTokens, 65536) } };
+  if (system) body.systemInstruction = { parts: [{ text: system }] };
+  if (json) body.generationConfig.responseMimeType = 'application/json';
+  const url = `${GEMINI}/models/${encodeURIComponent(settings.geminiModel)}:generateContent`;
+  const res = await apiFetch(url, { method: 'POST', headers: geminiHeaders(), body: JSON.stringify(body) }, 'KI');
+  const j = await res.json();
+  const cand = j.candidates?.[0];
+  const text = (cand?.content?.parts || []).filter((p) => p.text && !p.thought).map((p) => p.text).join('');
+  if (!text.trim()) {
+    if (j.promptFeedback?.blockReason) throw new Error(`KI: Die Anfrage wurde von Google blockiert (${j.promptFeedback.blockReason}).`);
+    throw new Error('KI: Leere Antwort erhalten' + (cand?.finishReason === 'MAX_TOKENS' ? ' (Text zu lang).' : '.'));
+  }
+  return text;
+}
+
+async function openaiChat(messages, { json = false, maxTokens = 32000, effort = 'low' } = {}) {
   const body = { model: settings.model, messages, max_completion_tokens: maxTokens };
   if (json) body.response_format = { type: 'json_object' };
   if (effort && /^(gpt-5|gpt-6|o\d)/.test(settings.model)) body.reasoning_effort = effort;
@@ -223,7 +285,110 @@ function stripMp3Headers(buf) {
   return b.subarray(off, end);
 }
 
+/* Gemini-Stimme: liefert rohes PCM (oder WAV), das hier zu MP3 wird – sonst wären die Dateien ca. 6× so groß. */
+
+function b64ToBytes(b64) {
+  const s = atob(b64);
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+
+// Sucht in der Antwort nach den base64-Audiodaten – die Feldnamen unterscheiden sich je nach Schnittstelle.
+function findAudio(o) {
+  if (!o || typeof o !== 'object') return null;
+  const mime = o.mime_type || o.mimeType || '';
+  if (typeof o.data === 'string' && o.data.length > 100 && (/audio/i.test(mime) || o.type === 'audio')) return { data: o.data, mime };
+  for (const v of Object.values(o)) {
+    const found = findAudio(v);
+    if (found) return found;
+  }
+  return null;
+}
+
+function pcmFromAudio({ data, mime }) {
+  const b = b64ToBytes(data);
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) { // WAV
+    const v = new DataView(b.buffer);
+    let rate = 24000, off = 12;
+    while (off + 8 <= b.length) {
+      const id = String.fromCharCode(b[off], b[off + 1], b[off + 2], b[off + 3]);
+      const size = v.getUint32(off + 4, true);
+      if (id === 'fmt ') rate = v.getUint32(off + 12, true);
+      if (id === 'data') {
+        const len = Math.min(size, b.length - off - 8);
+        return { pcm: new Int16Array(b.buffer.slice(off + 8, off + 8 + len - (len % 2))), rate };
+      }
+      off += 8 + size + (size % 2);
+    }
+  }
+  const rate = +(/rate=(\d+)/i.exec(mime)?.[1] || 24000);
+  return { pcm: new Int16Array(b.buffer.slice(0, b.length - (b.length % 2))), rate };
+}
+
+let lameLoading = null;
+function loadLame() {
+  if (window.lamejs) return Promise.resolve();
+  return lameLoading || (lameLoading = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = LAMEJS;
+    s.onload = () => res();
+    s.onerror = () => { lameLoading = null; rej(new Error('Stimme: Der MP3-Baustein konnte nicht geladen werden (Internet?).')); };
+    document.head.appendChild(s);
+  }));
+}
+
+async function pcmToMp3({ pcm, rate }) {
+  await loadLame();
+  const enc = new lamejs.Mp3Encoder(1, rate, 64);
+  const out = [];
+  for (let i = 0, n = 0; i < pcm.length; i += 1152, n++) {
+    const chunk = enc.encodeBuffer(pcm.subarray(i, i + 1152));
+    if (chunk.length) out.push(new Uint8Array(chunk));
+    if (n % 400 === 399) await sleep(0); // Bedienung bleibt flüssig
+  }
+  const tail = enc.flush();
+  if (tail.length) out.push(new Uint8Array(tail));
+  return new Blob(out);
+}
+
+async function geminiTtsPart(text) {
+  if (!settings.geminiKey) throw new Error('Stimme: Für die Gemini-Stimme fehlt der Gemini-Schlüssel (Einstellungen).');
+  let j;
+  try {
+    const res = await apiFetch(`${GEMINI}/interactions`, {
+      method: 'POST',
+      headers: geminiHeaders(),
+      body: JSON.stringify({
+        model: settings.geminiTtsModel,
+        input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style: GEMINI_TTS_STYLE }] }] }],
+        response_format: { type: 'audio' },
+        generation_config: { speech_config: [{ voice: settings.geminiVoice }] },
+      }),
+    }, 'Stimme');
+    j = await res.json();
+  } catch (e) {
+    if (e.status !== 400 && e.status !== 404) throw e;
+    // Ältere Schnittstelle als Ersatz
+    try {
+      const res = await apiFetch(`${GEMINI}/models/${encodeURIComponent(settings.geminiTtsModel)}:generateContent`, {
+        method: 'POST',
+        headers: geminiHeaders(),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `Lies ${GEMINI_TTS_STYLE} vor: ${text}` }] }],
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.geminiVoice } } } },
+        }),
+      }, 'Stimme');
+      j = await res.json();
+    } catch { throw e; }
+  }
+  const audio = findAudio(j);
+  if (!audio) throw new Error('Stimme: Gemini hat keine Audiodaten geliefert.');
+  return pcmToMp3(pcmFromAudio(audio));
+}
+
 async function ttsPart(text) {
+  if (settings.voiceProvider === 'gemini') return (await geminiTtsPart(text)).arrayBuffer();
   if (settings.voiceProvider === 'eleven') {
     if (!settings.elKey || !settings.elVoice) throw new Error('Stimme: Für die eigene Stimme fehlen ElevenLabs-Schlüssel oder Voice-ID (Einstellungen).');
     const res = await apiFetch(`${ELEVEN}/text-to-speech/${encodeURIComponent(settings.elVoice)}?output_format=mp3_44100_128`, {
@@ -233,6 +398,7 @@ async function ttsPart(text) {
     }, 'Stimme');
     return res.arrayBuffer();
   }
+  if (!settings.openaiKey) throw new Error('Stimme: Für die OpenAI-Stimme fehlt der OpenAI-Schlüssel (Einstellungen).');
   const res = await apiFetch(`${OPENAI}/audio/speech`, {
     method: 'POST',
     headers: openaiHeaders(),
@@ -243,11 +409,52 @@ async function ttsPart(text) {
 
 async function tts(text) {
   const parts = [];
-  for (const piece of splitForTts(text)) parts.push(stripMp3Headers(await ttsPart(piece)));
+  const max = settings.voiceProvider === 'gemini' ? GEMINI_TTS_CHUNK : TTS_CHUNK;
+  for (const piece of splitForTts(text, max)) parts.push(stripMp3Headers(await ttsPart(piece)));
   return new Blob(parts, { type: 'audio/mpeg' });
 }
 
+// iPhone-Aufnahmen (AAC/MP4) nimmt Gemini nicht sicher an – daher in ein kleines WAV (16 kHz, mono) umwandeln.
+async function toWav16k(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  let decoded;
+  try { decoded = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { ctx.close?.(); }
+  const rate = 16000;
+  const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, Math.ceil(decoded.duration * rate), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const samples = (await off.startRendering()).getChannelData(0);
+  const b = new ArrayBuffer(44 + samples.length * 2), v = new DataView(b);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+  return new Uint8Array(b);
+}
+
+function bytesToB64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 async function transcribe(blob, ext) {
+  if (usesGemini()) {
+    const wav = await toWav16k(blob);
+    const text = await geminiChat([{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Schreibe genau auf, was in dieser Sprachaufnahme gesagt wird (meist Deutsch). Gib nur den gesprochenen Text aus, ohne Kommentar. Wenn nichts gesagt wird, antworte mit einem einzelnen Bindestrich.' },
+        { type: 'audio', mime: 'audio/wav', data: bytesToB64(wav) },
+      ],
+    }], { maxTokens: 4000 });
+    return text.trim() === '-' ? '' : text.trim();
+  }
   const fd = new FormData();
   fd.append('file', blob, 'frage.' + ext);
   fd.append('model', 'gpt-4o-mini-transcribe');
@@ -412,7 +619,7 @@ function changed(doc) {
 
 async function generate(doc) {
   if (running.has(doc.id)) return;
-  if (!settings.openaiKey) { toast('Bitte zuerst den OpenAI-Schlüssel in den Einstellungen eintragen.'); return; }
+  if (!hasTextKey()) { toast(missingKeyMsg()); return; }
   running.add(doc.id);
   keepAwake();
   doc.error = null;
@@ -727,7 +934,7 @@ function resetAskBtn() {
 async function onAskButton() {
   const doc = docs.get(view.docId);
   if (!doc || asking) return;
-  if (!settings.openaiKey) { toast('Bitte zuerst den OpenAI-Schlüssel eintragen.'); return; }
+  if (!hasTextKey()) { toast(missingKeyMsg()); return; }
   if (!questionRec) {
     unlockAudio();
     rememberPosition();
@@ -769,7 +976,7 @@ async function onAskTyped(ev) {
   const q = $('#askInput').value.trim();
   const doc = docs.get(view.docId);
   if (!q || !doc || asking) return;
-  if (!settings.openaiKey) { toast('Bitte zuerst den OpenAI-Schlüssel eintragen.'); return; }
+  if (!hasTextKey()) { toast(missingKeyMsg()); return; }
   unlockAudio();
   rememberPosition();
   player.pause();
@@ -857,7 +1064,7 @@ function render() {
 
 function renderLibrary() {
   const list = [...docs.values()].sort((a, b) => b.createdAt - a.createdAt);
-  $('#keyHint').hidden = !!settings.openaiKey;
+  $('#keyHint').hidden = hasTextKey();
   $('#emptyHint').hidden = list.length > 0;
   $('#docList').innerHTML = list.map((d) => `
     <li><a class="doc-item" href="#doc/${encodeURIComponent(d.id)}">
@@ -980,21 +1187,56 @@ async function togglePlay() {
 /* ---------- Einstellungen ---------- */
 
 function renderSettings() {
+  document.querySelectorAll('input[name=textProv]').forEach((r) => { r.checked = r.value === settings.textProvider; });
+  $('#geminiTextBox').hidden = !usesGemini();
+  $('#openaiTextBox').hidden = usesGemini();
+  $('#sGKey').value = settings.geminiKey;
+  $('#sGModel').value = settings.geminiModel;
+  $('#sGTtsModel').value = settings.geminiTtsModel;
   $('#sKey').value = settings.openaiKey;
   $('#sModel').value = settings.model;
   const sel = $('#sVoice');
   if (!sel.options.length) sel.innerHTML = OPENAI_VOICES.map((v) => `<option value="${v}">${v[0].toUpperCase() + v.slice(1)}</option>`).join('');
   sel.value = settings.voice;
+  const gSel = $('#sGVoice');
+  if (!gSel.options.length) gSel.innerHTML = GEMINI_VOICES.map(([v, d]) => `<option value="${v}">${v} (${d})</option>`).join('');
+  gSel.value = settings.geminiVoice;
   $('#sElKey').value = settings.elKey;
   $('#sElVoice').value = settings.elVoice;
   document.querySelectorAll('input[name=voiceProv]').forEach((r) => { r.checked = r.value === settings.voiceProvider; });
+  $('#geminiVoiceBox').hidden = settings.voiceProvider !== 'gemini';
   $('#openaiVoiceBox').hidden = settings.voiceProvider !== 'openai';
   $('#elevenBox').hidden = settings.voiceProvider !== 'eleven';
+  $('#voiceKeyHint').hidden = !(settings.voiceProvider === 'openai' && usesGemini() && !settings.openaiKey)
+    && !(settings.voiceProvider === 'gemini' && !usesGemini() && !settings.geminiKey);
+  $('#voiceKeyHint').textContent = settings.voiceProvider === 'openai'
+    ? 'Für die OpenAI-Stimme brauchst du zusätzlich einen OpenAI-Schlüssel (oben unter „OpenAI“ eintragen).'
+    : 'Für die Gemini-Stimme brauchst du zusätzlich einen Gemini-Schlüssel (oben unter „Google Gemini“ eintragen).';
   $('#sampleText').textContent = SAMPLE_TEXT;
   if (navigator.storage?.estimate) {
     navigator.storage.estimate().then((e) => {
       $('#storageInfo').textContent = `Belegt: ca. ${Math.round((e.usage || 0) / 1e6)} MB von ${docs.size} Podcast(s).`;
     }).catch(() => {});
+  }
+}
+
+async function testGeminiKey() {
+  const out = $('#testGKeyOut');
+  if (!settings.geminiKey) { out.textContent = 'Bitte zuerst einen Schlüssel eintragen.'; return; }
+  out.textContent = 'Prüfe …';
+  try {
+    const res = await apiFetch(`${GEMINI}/models?pageSize=1000`, { headers: geminiHeaders() }, 'Gemini');
+    const ids = ((await res.json()).models || []).map((m) => m.name.replace(/^models\//, ''));
+    const textModels = ids.filter((id) => /^gemini-/.test(id) && !/tts|image|embedding|live|robotics|transcribe|audio/.test(id)).sort().reverse();
+    const ttsModels = ids.filter((id) => /tts/.test(id)).sort().reverse();
+    $('#gModelList').innerHTML = textModels.map((id) => `<option value="${esc(id)}">`).join('');
+    $('#gTtsModelList').innerHTML = ttsModels.map((id) => `<option value="${esc(id)}">`).join('');
+    const problems = [];
+    if (!ids.includes(settings.geminiModel)) problems.push(`Text-Modell „${settings.geminiModel}“ nicht gefunden (verfügbar z. B.: ${textModels.slice(0, 5).join(', ')})`);
+    if (settings.voiceProvider === 'gemini' && !ids.includes(settings.geminiTtsModel)) problems.push(`Stimmen-Modell „${settings.geminiTtsModel}“ nicht gefunden (verfügbar z. B.: ${ttsModels.slice(0, 4).join(', ')})`);
+    out.textContent = problems.length ? `Schlüssel funktioniert, aber: ${problems.join('; ')}.` : '✓ Schlüssel funktioniert, die Modelle sind verfügbar.';
+  } catch (e) {
+    out.textContent = e.message;
   }
 }
 
@@ -1095,7 +1337,7 @@ function bindUI() {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    if (!settings.openaiKey) { toast('Bitte zuerst den OpenAI-Schlüssel in den Einstellungen eintragen.'); location.hash = 'settings'; return; }
+    if (!hasTextKey()) { toast(missingKeyMsg()); location.hash = 'settings'; return; }
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     const doc = {
       id, title: file.name.replace(/\.pdf$/i, ''), fileName: file.name, createdAt: Date.now(),
@@ -1183,17 +1425,28 @@ function bindUI() {
   const bindSetting = (sel, key, transform = (v) => v.trim()) => {
     $(sel).addEventListener('change', (e) => { settings[key] = transform(e.target.value); saveSettings(); });
   };
+  bindSetting('#sGKey', 'geminiKey');
+  bindSetting('#sGModel', 'geminiModel');
+  bindSetting('#sGTtsModel', 'geminiTtsModel');
+  bindSetting('#sGVoice', 'geminiVoice');
   bindSetting('#sKey', 'openaiKey');
   bindSetting('#sModel', 'model');
   bindSetting('#sVoice', 'voice');
   bindSetting('#sElKey', 'elKey');
   bindSetting('#sElVoice', 'elVoice');
+  document.querySelectorAll('input[name=textProv]').forEach((r) => r.addEventListener('change', () => {
+    settings.textProvider = r.value;
+    saveSettings();
+    renderSettings();
+  }));
   document.querySelectorAll('input[name=voiceProv]').forEach((r) => r.addEventListener('change', () => {
     settings.voiceProvider = r.value;
     saveSettings();
     renderSettings();
   }));
+  $('#testGKeyBtn').addEventListener('click', testGeminiKey);
   $('#testKeyBtn').addEventListener('click', testKey);
+  $('#previewGeminiBtn').addEventListener('click', previewVoice);
   $('#previewOpenaiBtn').addEventListener('click', previewVoice);
   $('#previewElBtn').addEventListener('click', previewVoice);
   $('#recVoiceBtn').addEventListener('click', onRecordVoice);
@@ -1212,7 +1465,7 @@ function bindUI() {
   route();
   // Was beim letzten Mal mitten in der Erstellung war, automatisch weitermachen.
   for (const d of docs.values()) {
-    if (['extracting', 'planning', 'writing'].includes(d.status) && settings.openaiKey) generate(d);
+    if (['extracting', 'planning', 'writing'].includes(d.status) && hasTextKey()) generate(d);
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
