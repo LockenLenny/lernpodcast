@@ -1,5 +1,5 @@
 // Hält die App offline verfügbar. Bei Änderungen an der App VERSION erhöhen.
-const VERSION = 'lernpodcast-v2';
+const VERSION = 'lernpodcast-v3';
 const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 const LAMEJS = 'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js';
 const ASSETS = [
@@ -9,7 +9,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' – nie eine ältere Kopie aus dem Browser-Zwischenspeicher übernehmen
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -29,7 +30,8 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     caches.open(VERSION).then(async (cache) => {
       const cached = await cache.match(req, { ignoreSearch: true });
-      const fresh = fetch(req)
+      // req.url statt req: Seitenaufrufe (mode 'navigate') lassen sich nicht mit Optionen kopieren
+      const fresh = fetch(req.url, { cache: 'no-cache' })
         .then((res) => { if (res.ok) cache.put(req, res.clone()); return res; })
         .catch(() => cached);
       return cached || fresh;
