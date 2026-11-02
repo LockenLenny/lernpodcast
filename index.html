@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Lernpodcast">
+<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Lernpodcast</title>
+</head>
+<body>
+<header class="top">
+  <button id="backBtn" class="icon-btn" hidden aria-label="Zurück">‹ Zurück</button>
+  <h1 id="viewTitle">Lernpodcast</h1>
+  <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen">Einstellungen</button>
+</header>
+
+<main>
+  <!-- Bibliothek -->
+  <section id="libraryView">
+    <div id="keyHint" class="card warn" hidden>
+      Zuerst einmal deinen OpenAI-Schlüssel eintragen: <a href="#settings">Einstellungen öffnen</a>
+    </div>
+    <a id="nowPlaying" class="card now-playing" hidden></a>
+    <label class="big-btn primary" for="pdfInput">+ PDF hinzufügen</label>
+    <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
+    <ul id="docList" class="list"></ul>
+    <p id="emptyHint" class="muted center">Noch nichts hier. Lade ein PDF hoch – daraus wird dein Lernpodcast.</p>
+  </section>
+
+  <!-- Ein Podcast -->
+  <section id="docView" hidden>
+    <div id="genBox" class="card" hidden>
+      <div id="genText"></div>
+      <div class="bar"><div id="genBar"></div></div>
+      <p id="genHint" class="muted small">Lass die App offen und den Bildschirm an, bis alles fertig ist. Du kannst schon hören, sobald Kapitel 1 fertig ist.</p>
+      <p id="genError" class="error small" hidden></p>
+      <button id="resumeGenBtn" class="btn" hidden>Erstellung fortsetzen</button>
+    </div>
+
+    <div class="card player">
+      <div id="nowChapter" class="now"></div>
+      <input type="range" id="seek" min="0" max="1" value="0" step="1" aria-label="Position">
+      <div class="times"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+      <div class="controls">
+        <button id="prevBtn" class="ctl" aria-label="Vorheriges Kapitel"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+        <button id="back15Btn" class="ctl txt" aria-label="15 Sekunden zurück">−15</button>
+        <button id="playBtn" class="ctl play" aria-label="Abspielen"></button>
+        <button id="fwd15Btn" class="ctl txt" aria-label="15 Sekunden vor">+15</button>
+        <button id="nextBtn" class="ctl" aria-label="Nächstes Kapitel"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      </div>
+      <div class="center"><button id="rateBtn" class="btn small-btn">Tempo 1×</button></div>
+    </div>
+
+    <button id="resumeBtn" class="big-btn primary" hidden>▶ Weiter mit dem Podcast</button>
+    <button id="askBtn" class="big-btn ask">Frage stellen</button>
+    <div id="askStatus" class="muted center small"></div>
+    <form id="askForm" class="ask-form">
+      <input id="askInput" type="text" placeholder="… oder Frage eintippen" autocomplete="off" enterkeyhint="send">
+      <button class="btn" type="submit">Senden</button>
+    </form>
+
+    <h2>Kapitel</h2>
+    <ol id="chapterList" class="list chapters"></ol>
+
+    <h2 id="qaHeading" hidden>Deine Fragen</h2>
+    <ul id="qaList" class="list"></ul>
+
+    <div class="doc-actions">
+      <button id="revoiceBtn" class="btn">Mit aktueller Stimme neu einsprechen</button>
+      <button id="deleteDocBtn" class="btn danger">Diesen Podcast löschen</button>
+    </div>
+  </section>
+
+  <!-- Einstellungen -->
+  <section id="settingsView" hidden>
+    <div class="card">
+      <h2>1. OpenAI (Pflicht)</h2>
+      <p class="small muted">OpenAI schreibt den Podcast, versteht deine Fragen und beantwortet sie. Schlüssel bekommst du auf platform.openai.com → API keys.</p>
+      <label class="field">API-Schlüssel
+        <input type="password" id="sKey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-…">
+      </label>
+      <label class="field">Text-Modell
+        <input id="sModel" list="modelList" autocapitalize="off" spellcheck="false">
+      </label>
+      <datalist id="modelList">
+        <option value="gpt-6.1-terra">
+        <option value="gpt-6.1-sol">
+        <option value="gpt-6-luna">
+        <option value="gpt-5-mini">
+      </datalist>
+      <button id="testKeyBtn" class="btn">Schlüssel testen</button>
+      <p id="testKeyOut" class="small"></p>
+    </div>
+
+    <div class="card">
+      <h2>2. Stimme</h2>
+      <label class="radio"><input type="radio" name="voiceProv" value="openai"> OpenAI-Stimme (einfach, günstig)</label>
+      <label class="radio"><input type="radio" name="voiceProv" value="eleven"> Eigene Stimme (ElevenLabs)</label>
+
+      <div id="openaiVoiceBox">
+        <label class="field">Stimme
+          <select id="sVoice"></select>
+        </label>
+        <button id="previewOpenaiBtn" class="btn">Probe hören</button>
+      </div>
+
+      <div id="elevenBox" hidden>
+        <p class="small muted">Für deine eigene Stimme brauchst du ein Konto bei elevenlabs.io (Stimmen-Klonen gibt es ab dem Starter-Abo). Den Schlüssel findest du dort unter „API Keys“.</p>
+        <label class="field">ElevenLabs-Schlüssel
+          <input type="password" id="sElKey" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <div class="card inner">
+          <strong>Eigene Stimme aufnehmen</strong>
+          <p class="small">Such dir einen leisen Ort und lies diesen Text ruhig und natürlich vor (ca. 1–2 Minuten):</p>
+          <blockquote id="sampleText"></blockquote>
+          <button id="recVoiceBtn" class="big-btn primary">● Aufnahme starten</button>
+          <p id="recVoiceStatus" class="small"></p>
+        </div>
+        <label class="field">Voice-ID (wird nach der Aufnahme automatisch eingetragen)
+          <input id="sElVoice" autocapitalize="off" spellcheck="false">
+        </label>
+        <button id="previewElBtn" class="btn">Probe hören</button>
+      </div>
+      <p id="previewOut" class="small"></p>
+    </div>
+
+    <div class="card">
+      <h2>Speicher</h2>
+      <p id="storageInfo" class="small muted"></p>
+      <p class="small muted">Alles (PDFs, Podcasts, Schlüssel) bleibt nur auf diesem Handy. Die Schlüssel werden ausschließlich direkt an OpenAI bzw. ElevenLabs geschickt.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<audio id="player" preload="auto" playsinline></audio>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
