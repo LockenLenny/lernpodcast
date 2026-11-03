@@ -33,6 +33,7 @@
     <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
     <ul id="docList" class="list"></ul>
     <p id="emptyHint" class="muted center">Noch nichts hier. Lade ein PDF hoch – daraus wird dein Lernpodcast.</p>
+    <p class="center small footer-links"><a href="#privacy">Datenschutz</a></p>
   </section>
 
   <!-- Ein Podcast -->
@@ -178,14 +179,56 @@
       <h2>Speicher</h2>
       <p id="storageInfo" class="small muted"></p>
       <p class="small muted">Alles (PDFs, Podcasts, Schlüssel) bleibt nur auf diesem Handy. Die Schlüssel werden ausschließlich direkt an Google, OpenAI bzw. ElevenLabs geschickt.</p>
+      <a class="btn" href="#privacy">Datenschutz &amp; Daten löschen</a>
+    </div>
+  </section>
+
+  <!-- Datenschutz -->
+  <section id="privacyView" hidden>
+    <div class="card">
+      <h2>Kurz gesagt</h2>
+      <p>Keine Cookies, kein Tracking, keine Werbung, kein Konto. Deine PDFs, Podcasts, Fragen und Schlüssel liegen nur auf diesem Gerät.</p>
+    </div>
+    <div class="card">
+      <h2>Was auf diesem Gerät gespeichert wird</h2>
+      <p class="small">Im Speicher des Browsers (IndexedDB): deine Einstellungen und Schlüssel, der Text deiner PDFs, die erstellten Kapitel als Audio und deine Fragen mit Antworten. Das ist nötig, damit die App funktioniert – auch offline beim Laufen. Nichts davon wird an GitHub oder sonst jemanden geschickt.</p>
+    </div>
+    <div class="card">
+      <h2>Was wohin geschickt wird – nur wenn du es auslöst</h2>
+      <p class="small">Wenn du einen Podcast erstellst, eine Stimme anhörst oder eine Frage stellst, schickt die App den nötigen Text (bzw. deine Sprachaufnahme) direkt an den Dienst, den du in den Einstellungen gewählt hast – mit deinem eigenen Schlüssel:</p>
+      <ul class="small plain">
+        <li><strong>Google Gemini</strong> – in der kostenlosen Stufe darf Google die Inhalte zur Verbesserung seiner Produkte verwenden. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Bedingungen</a> · <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Datenschutz</a></li>
+        <li><strong>OpenAI</strong> (falls gewählt) – <a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">Datenschutz</a></li>
+        <li><strong>ElevenLabs</strong> (nur für die eigene Stimme) – <a href="https://elevenlabs.io/privacy-policy" target="_blank" rel="noopener">Datenschutz</a></li>
+      </ul>
+      <p class="small">Für vertrauliche Dokumente nimm besser OpenAI statt der kostenlosen Gemini-Stufe.</p>
+    </div>
+    <div class="card">
+      <h2>Hosting</h2>
+      <p class="small">Die App-Dateien kommen von GitHub Pages. Wie bei jeder Webseite sieht GitHub dabei technisch deine IP-Adresse. Alle anderen Bausteine (PDF-Leser, MP3-Umwandlung) liefert die App selbst aus – es werden beim Öffnen keine fremden Server angefragt. <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">Datenschutz von GitHub</a></p>
+    </div>
+    <div class="card">
+      <h2>Alles löschen</h2>
+      <p class="small">Entfernt alle Podcasts, Fragen, Einstellungen und Schlüssel von diesem Gerät.</p>
+      <button id="wipeBtn" class="btn danger">Alle Daten auf diesem Gerät löschen</button>
     </div>
   </section>
 </main>
 
+<!-- Datenschutz-Hinweis: klein, unten, blockiert nichts, erscheint einmal und nicht beim Ankommen -->
+<aside id="privacyNotice" class="notice" role="region" aria-label="Datenschutz-Hinweis" hidden>
+  <p class="notice-title">Keine Cookies, kein Tracking.</p>
+  <p class="notice-text">Deine PDFs, Podcasts und Schlüssel bleiben auf diesem Gerät. Nur wenn du einen Podcast erstellst oder etwas fragst, geht der Text an die KI, die du gewählt hast.</p>
+  <div class="notice-actions">
+    <button id="noticeOkBtn" class="btn notice-ok">Verstanden</button>
+    <a id="noticeMoreLink" href="#privacy">Details</a>
+  </div>
+</aside>
+
 <div id="toast" class="toast" hidden></div>
 <audio id="player" preload="auto" playsinline></audio>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

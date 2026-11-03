@@ -1,13 +1,15 @@
 # Lernpodcast
 
-Static PWA for iPhone Safari: upload a PDF → AI turns it into a vivid, German, chapter-based learning podcast to listen to while running; follow-up questions by voice. No build step, no backend, no dependencies besides pdf.js from cdnjs.
+Static PWA for iPhone Safari: upload a PDF → AI turns it into a vivid, German, chapter-based learning podcast to listen to while running; follow-up questions by voice. No build step, no backend. Third-party code is self-hosted in `vendor/` (pdf.js 3.11.174, lamejs 1.2.1, both verified against cdnjs SRI hashes) so opening the app contacts no server except GitHub Pages — keep it that way (no CDN fonts/scripts, no analytics), otherwise a consent banner becomes necessary.
+
+Privacy UX (based on Utz et al. 2019, NN/g popup/overlay research, Hsieh et al. 2020): no cookie banner, because nothing needs consent. Instead `#privacyNotice` — a small non-modal notice, bottom on phones / bottom-left on wide screens, shown once, never on arrival or mid-task (after a key is saved or after 15 s on the library), dismissed for good via `kv.noticeSeen`. Full details and "Alle Daten löschen" live in the `#privacy` view.
 
 - Live: https://lockenlenny.github.io/lernpodcast/ (GitHub Pages, branch `main`, root)
 - User speaks German. UI text, prompts and comments are German; answer the user in German.
 - Design must stay very simple: big buttons, one column, light/dark via CSS variables in `style.css`.
 
 ## Files
-- `index.html` – three views (`#libraryView`, `#docView`, `#settingsView`) switched by URL hash (`#doc/<id>`, `#settings`).
+- `index.html` – four views (`#libraryView`, `#docView`, `#settingsView`, `#privacyView`) switched by URL hash (`#doc/<id>`, `#settings`, `#privacy`).
 - `app.js` – everything else, in sections:
   - IndexedDB `lernpodcast`: stores `docs` (metadata, chapters with `script`/`hasAudio`/`duration`, `position`, `qa`), `audio` (`<docId>:<i>` and `<docId>:qa:<i>` as `{buf, type}`), `kv` (`settings`, `text:<id>`, `pdf:<id>`).
   - API calls go straight from the browser (all three allow CORS). Text provider (`settings.textProvider`) and voice provider (`settings.voiceProvider`) are chosen separately; `chat()` and `transcribe()` follow the text provider. Messages are built in OpenAI format and converted for Gemini in `geminiChat()`.

@@ -6,8 +6,9 @@
  * vorlesen (Gemini, OpenAI oder ElevenLabs), alles gespeichert in IndexedDB.
  */
 
-const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-const LAMEJS = 'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js';
+// pdf.js 3.11.174 und lamejs 1.2.1 liegen selbst gehostet in vendor/ – so geht beim Laden keine IP an Dritte.
+const PDFJS = 'vendor/';
+const LAMEJS = 'vendor/lame.min.js';
 const OPENAI = 'https://api.openai.com/v1';
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta';
 const ELEVEN = 'https://api.elevenlabs.io/v1';
@@ -91,6 +92,7 @@ const db = (() => {
     del: (store, key) => tx(store, 'readwrite', (s) => s.delete(key)),
     all: (store) => tx(store, 'readonly', (s) => s.getAll()),
     keys: (store) => tx(store, 'readonly', (s) => s.getAllKeys()),
+    clear: (store) => tx(store, 'readwrite', (s) => s.clear()),
   };
 })();
 
@@ -1034,9 +1036,11 @@ function route() {
   const h = decodeURIComponent(location.hash.slice(1));
   if (h.startsWith('doc/')) view = { name: 'doc', docId: h.slice(4) };
   else if (h === 'settings') view = { name: 'settings', docId: null };
+  else if (h === 'privacy') view = { name: 'privacy', docId: null };
   else view = { name: 'library', docId: null };
   render();
   window.scrollTo(0, 0);
+  if (view.name === 'privacy') dismissNotice(); // wer die Details liest, braucht den Hinweis nicht mehr
 }
 
 let renderQueued = false;
@@ -1050,10 +1054,12 @@ function render() {
   $('#libraryView').hidden = view.name !== 'library';
   $('#docView').hidden = view.name !== 'doc';
   $('#settingsView').hidden = view.name !== 'settings';
+  $('#privacyView').hidden = view.name !== 'privacy';
   $('#backBtn').hidden = view.name === 'library';
   $('#settingsBtn').hidden = view.name === 'settings';
   if (view.name === 'library') { $('#viewTitle').textContent = 'Lernpodcast'; renderLibrary(); }
   if (view.name === 'settings') { $('#viewTitle').textContent = 'Einstellungen'; renderSettings(); }
+  if (view.name === 'privacy') $('#viewTitle').textContent = 'Datenschutz';
   if (view.name === 'doc') {
     const doc = docs.get(view.docId);
     if (!doc) { location.hash = ''; return; }
@@ -1327,6 +1333,46 @@ async function onRecordVoice() {
   }
 }
 
+/* ---------- Datenschutz-Hinweis ----------
+ * Einmalig, nicht blockierend, unten. Erscheint nicht beim Ankommen und nicht mitten in
+ * einer Aufgabe, sondern direkt nachdem ein Schlüssel gespeichert wurde (passt zum Thema)
+ * oder nach 15 s auf der Startseite. Nach „Verstanden“ (oder den Details) nie wieder. */
+
+const NOTICE_DELAY_MS = 15000;
+let noticeState = 'pending'; // pending | shown | done
+
+async function initNotice() {
+  try { if (await db.get('kv', 'noticeSeen')) noticeState = 'done'; } catch { /* dann eben zeigen */ }
+  if (noticeState === 'pending') setTimeout(() => maybeShowNotice(false), NOTICE_DELAY_MS);
+}
+
+function maybeShowNotice(afterKeySaved) {
+  if (noticeState !== 'pending') return;
+  const busy = questionRec || asking || voiceRec || view.name === 'privacy' || (!afterKeySaved && view.name !== 'library');
+  if (busy) { setTimeout(() => maybeShowNotice(false), 5000); return; }
+  noticeState = 'shown';
+  const n = $('#privacyNotice');
+  n.hidden = false;
+  document.body.classList.add('notice-open');
+  document.body.style.setProperty('--notice-h', n.offsetHeight + 'px');
+}
+
+function dismissNotice() {
+  if (noticeState === 'done') return;
+  noticeState = 'done';
+  $('#privacyNotice').hidden = true;
+  document.body.classList.remove('notice-open');
+  db.put('kv', Date.now(), 'noticeSeen').catch(() => {});
+}
+
+async function wipeAllData() {
+  if (!confirm('Wirklich alle Podcasts, Fragen, Einstellungen und Schlüssel von diesem Gerät löschen? Das lässt sich nicht rückgängig machen.')) return;
+  player.pause();
+  for (const store of ['docs', 'audio', 'kv']) await db.clear(store);
+  location.hash = '';
+  location.reload();
+}
+
 /* ---------- Bedienung verbinden ---------- */
 
 function bindUI() {
@@ -1425,6 +1471,9 @@ function bindUI() {
   const bindSetting = (sel, key, transform = (v) => v.trim()) => {
     $(sel).addEventListener('change', (e) => { settings[key] = transform(e.target.value); saveSettings(); });
   };
+  for (const sel of ['#sGKey', '#sKey', '#sElKey']) {
+    $(sel).addEventListener('change', (e) => { if (e.target.value.trim()) setTimeout(() => maybeShowNotice(true), 800); });
+  }
   bindSetting('#sGKey', 'geminiKey');
   bindSetting('#sGModel', 'geminiModel');
   bindSetting('#sGTtsModel', 'geminiTtsModel');
@@ -1450,6 +1499,9 @@ function bindUI() {
   $('#previewOpenaiBtn').addEventListener('click', previewVoice);
   $('#previewElBtn').addEventListener('click', previewVoice);
   $('#recVoiceBtn').addEventListener('click', onRecordVoice);
+  $('#noticeOkBtn').addEventListener('click', dismissNotice);
+  $('#wipeBtn').addEventListener('click', wipeAllData);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && noticeState === 'shown') dismissNotice(); });
 
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => {
@@ -1462,6 +1514,7 @@ function bindUI() {
   await loadSettings();
   await loadDocs();
   bindUI();
+  await initNotice();
   route();
   // Was beim letzten Mal mitten in der Erstellung war, automatisch weitermachen.
   for (const d of docs.values()) {
