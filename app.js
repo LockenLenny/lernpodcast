@@ -6,6 +6,8 @@
  * vorlesen (Gemini, OpenAI oder ElevenLabs), alles gespeichert in IndexedDB.
  */
 
+const APP_VERSION = '5'; // zusammen mit VERSION in sw.js erhöhen
+
 // pdf.js 3.11.174 und lamejs 1.2.1 liegen selbst gehostet in vendor/ – so geht beim Laden keine IP an Dritte.
 const PDFJS = 'vendor/';
 const LAMEJS = 'vendor/lame.min.js';
@@ -1513,12 +1515,23 @@ function bindUI() {
   if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
   await loadSettings();
   await loadDocs();
+  document.querySelectorAll('.app-version').forEach((el) => { el.textContent = `App-Version ${APP_VERSION}`; });
   bindUI();
   await initNotice();
   route();
+  // Vorschau: …/?hinweis zeigt den Datenschutz-Hinweis sofort (auch wenn er schon bestätigt wurde)
+  if (/[?&]hinweis\b/.test(location.search)) { noticeState = 'pending'; maybeShowNotice(true); }
   // Was beim letzten Mal mitten in der Erstellung war, automatisch weitermachen.
   for (const d of docs.values()) {
     if (['extracting', 'planning', 'writing'].includes(d.status) && hasTextKey()) generate(d);
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // Neue Version übernimmt → einmal neu laden, damit sie sofort sichtbar ist.
+    // Nicht beim allerersten Besuch und nie, während etwas läuft.
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && player.paused && !running.size && !questionRec && !asking && !voiceRec) location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 })();

@@ -1,5 +1,5 @@
 // Hält die App offline verfügbar. Bei Änderungen an der App VERSION erhöhen.
-const VERSION = 'lernpodcast-v4';
+const VERSION = 'lernpodcast-v5';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png',
