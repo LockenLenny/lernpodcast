@@ -176,6 +176,22 @@
     </div>
 
     <div class="card">
+      <h2>3. Fragen per Siri (optional)</h2>
+      <p class="small">So fragst du mit „Hey Siri, Lernfrage“ – die Antwort bezieht sich auf den Podcast, den du zuletzt gehört hast.</p>
+      <details class="small">
+        <summary>Anleitung für den Kurzbefehl</summary>
+        <ol class="plain">
+          <li>App <strong>Kurzbefehle</strong> öffnen → <strong>+</strong> → Name: <strong>Lernfrage</strong>.</li>
+          <li>Aktion <strong>„Text diktieren“</strong> hinzufügen (Sprache: Deutsch).</li>
+          <li>Aktion suchen nach <strong>„codieren“</strong> → <strong>„URL codieren“</strong> wählen, Eingabe: <em>Diktierter Text</em>.</li>
+          <li>Aktion <strong>„Text“</strong> hinzufügen und hineinschreiben:<br><code>https://lockenlenny.github.io/lernpodcast/?frage=</code> – direkt dahinter die Variable <em>URL-codierter Text</em> einsetzen.</li>
+          <li>Aktion <strong>„URLs öffnen“</strong> hinzufügen. Fertig.</li>
+        </ol>
+        <p>Wichtig: Kurzbefehle öffnen Links in <strong>Safari</strong>, nicht in der App vom Home-Bildschirm – und beide haben getrennten Speicher. Nutze den Lernpodcast dafür in Safari (Schlüssel und PDFs dort eintragen). Das iPhone muss entsperrt sein; zum Anhören der Antwort einmal auf ▶ tippen.</p>
+      </details>
+    </div>
+
+    <div class="card">
       <h2>Speicher</h2>
       <p id="storageInfo" class="small muted"></p>
       <p class="small muted">Alles (PDFs, Podcasts, Schlüssel) bleibt nur auf diesem Handy. Die Schlüssel werden ausschließlich direkt an Google, OpenAI bzw. ElevenLabs geschickt.</p>

@@ -19,7 +19,8 @@ Privacy UX (based on Utz et al. 2019, NN/g popup/overlay research, Hsieh et al. 
   - Pipeline `generate(doc)`: pdf.js text extraction (vision OCR fallback for scans) → outline JSON → per chapter script + TTS (pool of 2), resumable from any step.
   - TTS input is split into ≤3500-char chunks; MP3 parts are joined after `stripMp3Headers` removes ID3/Xing so Safari reports the right duration.
   - Playback uses one `<audio>` element (iOS unlock via `unlockAudio()` inside a tap). Answers play in the same element, then `resumePodcast()` continues 3 s before the saved spot.
-- `sw.js` – offline cache (stale-while-revalidate). **Bump `VERSION` on every release**, otherwise phones keep the old app.
+- Siri: an iOS Shortcut opens `?frage=<url-encoded text>`; `handleLinkQuestion()` answers it for the last played podcast (`kv.lastDocId`) and strips the parameter. Shortcuts open Safari, whose storage is separate from the home-screen app (explained in the settings card).
+- `sw.js` – offline cache (stale-while-revalidate). **Bump `VERSION` in sw.js and `APP_VERSION` in app.js on every release**; a page that sees a new service worker take control reloads itself once (only when nothing is playing, generating or recording).
 
 ## Test
 No test suite. Serve the folder over http on localhost (any static server) and use the browser in mobile size. Mock `window.fetch` for `api.openai.com` / `generativelanguage.googleapis.com` to test without a key (a WAV body works for OpenAI `/audio/speech`; for Gemini `/interactions` return `{steps:[{content:[{type:'audio', mime_type:'audio/l16;codec=pcm;rate=24000', data:<base64 PCM>}]}]}`). Real checks for microphone, lock-screen playback and the home-screen app only work on the iPhone.

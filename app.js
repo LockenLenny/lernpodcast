@@ -6,7 +6,7 @@
  * vorlesen (Gemini, OpenAI oder ElevenLabs), alles gespeichert in IndexedDB.
  */
 
-const APP_VERSION = '5'; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = '6'; // zusammen mit VERSION in sw.js erhöhen
 
 // pdf.js 3.11.174 und lamejs 1.2.1 liegen selbst gehostet in vendor/ – so geht beim Laden keine IP an Dritte.
 const PDFJS = 'vendor/';
@@ -790,6 +790,7 @@ async function loadChapter(doc, i, time = 0, autoplay = false) {
   if (time > 0 && time < (player.duration || Infinity) - 1) player.currentTime = time;
   player.playbackRate = settings.rate;
   setMediaMeta(`Kapitel ${i + 1}: ${doc.chapters[i].title}`, doc.title);
+  db.put('kv', doc.id, 'lastDocId').catch(() => {}); // für Siri-Fragen: zuletzt gehörter Podcast
   if (autoplay) await safePlay();
   updatePlayerUI();
   return true;
@@ -1020,6 +1021,29 @@ Beantworte die Frage gesprochen, in der Du-Form, wie im Podcast: direkt auf den 
   if (cur.docId !== doc.id) cur.resume = null;
   await playAnswer(doc, blob);
   renderDoc(doc);
+}
+
+// Siri-Kurzbefehl öffnet …/?frage=<Text>: Frage zum zuletzt gehörten Podcast beantworten.
+async function handleLinkQuestion(q) {
+  history.replaceState(null, '', location.pathname + location.hash); // beim Neuladen nicht nochmal fragen
+  if (!q) return;
+  if (!hasTextKey()) { toast(missingKeyMsg(), 6000); location.hash = 'settings'; return; }
+  let lastId = null;
+  try { lastId = await db.get('kv', 'lastDocId'); } catch { /* egal */ }
+  const doc = docs.get(lastId) || [...docs.values()].sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (!doc) { toast('Lade zuerst ein PDF hoch – dann kannst du Fragen dazu stellen.', 6000); return; }
+  location.hash = 'doc/' + encodeURIComponent(doc.id);
+  asking = true;
+  resetAskBtn();
+  try {
+    await answerQuestion(doc, q);
+    if (player.paused) setAskStatus('Die Antwort ist bereit – tippe auf ▶.');
+  } catch (e) {
+    setAskStatus(e.message);
+  } finally {
+    asking = false;
+    resetAskBtn();
+  }
 }
 
 async function replayAnswer(doc, idx) {
@@ -1521,6 +1545,8 @@ function bindUI() {
   route();
   // Vorschau: …/?hinweis zeigt den Datenschutz-Hinweis sofort (auch wenn er schon bestätigt wurde)
   if (/[?&]hinweis\b/.test(location.search)) { noticeState = 'pending'; maybeShowNotice(true); }
+  const linkQuestion = new URLSearchParams(location.search).get('frage');
+  if (linkQuestion !== null) handleLinkQuestion(linkQuestion.trim());
   // Was beim letzten Mal mitten in der Erstellung war, automatisch weitermachen.
   for (const d of docs.values()) {
     if (['extracting', 'planning', 'writing'].includes(d.status) && hasTextKey()) generate(d);
